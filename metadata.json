@@ -1,0 +1,6 @@
+{
+  "name": "SentryGate - Cloud Identity Governance & PAM",
+  "description": "Enterprise Cloud Identity Governance and Privileged Access Management platform for multi-cloud environments.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
