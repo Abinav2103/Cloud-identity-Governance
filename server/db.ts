@@ -16,9 +16,11 @@ export const dbState: DatabaseState = {
   currentUri: config.mongodbUri,
 };
 
+let connectionPromise: Promise<any> | null = null;
+
 /**
  * Initializes the MongoDB connection using the provided MONGODB_URI.
- * Configured with SSL/TLS options and robust error/warning handling.
+ * Configured with connection reuse for Serverless / Vercel execution.
  */
 export async function connectDB(customUri?: string): Promise<{ success: boolean; message: string; error?: string }> {
   const uri = customUri || config.mongodbUri;
@@ -29,23 +31,40 @@ export async function connectDB(customUri?: string): Promise<{ success: boolean;
     return { success: false, message: dbState.statusMessage };
   }
 
+  // 1. If already connected, reuse connection immediately (vital for Vercel serverless)
+  if (mongoose.connection.readyState === 1) {
+    dbState.isConnected = true;
+    dbState.isConnecting = false;
+    dbState.currentUri = uri;
+    dbState.statusMessage = 'Connected to MongoDB Database: cloud_identity_governance';
+    return { success: true, message: dbState.statusMessage };
+  }
+
+  // 2. If already connecting, await ongoing promise
+  if (mongoose.connection.readyState === 2 && connectionPromise) {
+    try {
+      await connectionPromise;
+      return { success: dbState.isConnected, message: dbState.statusMessage };
+    } catch {
+      // Continue to fresh attempt below
+    }
+  }
+
   dbState.isConnecting = true;
   dbState.currentUri = uri;
   dbState.statusMessage = 'Connecting to MongoDB Atlas...';
 
   try {
-    if (mongoose.connection.readyState !== 0) {
-      await mongoose.disconnect().catch(() => {});
-    }
-
-    // Connect with TLS/SSL settings compatible with Node 22 / OpenSSL and Atlas
-    await mongoose.connect(uri, {
+    connectionPromise = mongoose.connect(uri, {
       serverSelectionTimeoutMS: 8000,
       connectTimeoutMS: 8000,
       tls: true,
       retryWrites: true,
       w: 'majority',
+      maxPoolSize: 10,
     });
+
+    await connectionPromise;
 
     dbState.isConnected = true;
     dbState.isConnecting = false;
@@ -57,6 +76,7 @@ export async function connectDB(customUri?: string): Promise<{ success: boolean;
 
     return { success: true, message: 'Connected to MongoDB Atlas successfully!' };
   } catch (err: any) {
+    connectionPromise = null;
     dbState.isConnected = false;
     dbState.isConnecting = false;
 
